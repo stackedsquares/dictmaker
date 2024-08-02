@@ -3,6 +3,7 @@ package indicphone
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/knadh/dictpress/internal/data"
@@ -47,7 +48,7 @@ func (ip *IndicPhone) ToTokens(s string, lang string) ([]string, error) {
 		}
 
 		if key0 == "" {
-			return nil, nil
+			continue
 		}
 
 		tokens = append(tokens,
@@ -68,16 +69,18 @@ func (ip *IndicPhone) ToQuery(s string, lang string) (string, error) {
 	case "kannada":
 		key0, key1, key2 = ip.kn.Encode(s)
 	case "malayalam":
-		key0, key1, key2 = ip.kn.Encode(s)
+		key0, key1, key2 = ip.ml.Encode(s)
 	}
 
 	if key0 == "" {
 		return "", nil
 	}
 
-	if key0 != key1 {
-		return fmt.Sprintf("%s | (%s & %s) ", key2, key1, key0), nil
+	tokens := slices.Compact([]string{key2, key1, key0})
+
+	if len(tokens) == 3 {
+		return fmt.Sprintf("%s | %s", key2, key1), nil
 	}
 
-	return fmt.Sprintf("%s", key0), nil
+	return tokens[0], nil
 }

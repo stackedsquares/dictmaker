@@ -12,10 +12,10 @@ CREATE TABLE entries (
     guid            UUID NOT NULL UNIQUE DEFAULT GEN_RANDOM_UUID(),
 
     -- Actual language content. Dictionary word or definition entries
-    content         TEXT NOT NULL,
+    content         TEXT NOT NULL CHECK (content <> ''),
 
     -- The first “alphabet” of the content. For English, for the word Apple, the initial is A
-    initial         TEXT NOT NULL,
+    initial         TEXT NOT NULL DEFAULT '',
 
     -- An optional numeric value to order search results
     weight          DECIMAL NOT NULL DEFAULT 0,
@@ -24,7 +24,7 @@ CREATE TABLE entries (
     tokens          TSVECTOR NOT NULL DEFAULT '',
 
     -- String representing the language of content. Eg: en, english
-    lang            TEXT NOT NULL,
+    lang            TEXT NOT NULL CHECK (lang <> ''),
 
     -- Optional tags
     tags            TEXT[] NOT NULL DEFAULT '{}'::TEXT[],
@@ -34,6 +34,9 @@ CREATE TABLE entries (
 
     -- Optional text notes
     notes           TEXT NOT NULL DEFAULT '',
+
+    -- Optional arbitrary metadata
+    meta            JSONB NOT NULL DEFAULT '{}',
 
     status          entry_status NOT NULL DEFAULT 'enabled',
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -75,3 +78,12 @@ CREATE TABLE comments (
 
     created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- settings
+DROP TABLE IF EXISTS settings CASCADE;
+CREATE TABLE settings (
+    key             TEXT NOT NULL UNIQUE,
+    value           JSONB NOT NULL DEFAULT '{}',
+    updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+DROP INDEX IF EXISTS idx_settings_key; CREATE INDEX idx_settings_key ON settings(key);
