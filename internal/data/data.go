@@ -18,6 +18,7 @@ const (
 
 // Lang represents a language's configuration.
 type Lang struct {
+	ID            string            `json:"id"`
 	Name          string            `json:"name"`
 	Types         map[string]string `json:"types"`
 	TokenizerName string            `json:"tokenizer"`
@@ -27,6 +28,9 @@ type Lang struct {
 
 // LangMap represents a map of language controllers indexed by the language key.
 type LangMap map[string]Lang
+
+// Dicts represents dictionaries, where each dictionary is a pair of languages.
+type Dicts [][2]Lang
 
 // Tokenizer represents a function that takes a string
 // and returns a list of Postgres tsvector tokens.
@@ -48,20 +52,21 @@ type Token struct {
 
 // Queries contains prepared DB queries.
 type Queries struct {
-	Search             *sqlx.Stmt `query:"search"`
-	SearchRelations    *sqlx.Stmt `query:"search-relations"`
-	GetEntry           *sqlx.Stmt `query:"get-entry"`
-	GetParentRelations *sqlx.Stmt `query:"get-parent-relations"`
-	GetInitials        *sqlx.Stmt `query:"get-initials"`
-	GetGlossaryWords   *sqlx.Stmt `query:"get-glossary-words"`
-	InsertEntry        *sqlx.Stmt `query:"insert-entry"`
-	UpdateEntry        *sqlx.Stmt `query:"update-entry"`
-	InsertRelation     *sqlx.Stmt `query:"insert-relation"`
-	UpdateRelation     *sqlx.Stmt `query:"update-relation"`
-	ReorderRelations   *sqlx.Stmt `query:"reorder-relations"`
-	DeleteEntry        *sqlx.Stmt `query:"delete-entry"`
-	DeleteRelation     *sqlx.Stmt `query:"delete-relation"`
-	GetStats           *sqlx.Stmt `query:"get-stats"`
+	Search               *sqlx.Stmt `query:"search"`
+	SearchRelations      *sqlx.Stmt `query:"search-relations"`
+	GetEntry             *sqlx.Stmt `query:"get-entry"`
+	GetParentRelations   *sqlx.Stmt `query:"get-parent-relations"`
+	GetInitials          *sqlx.Stmt `query:"get-initials"`
+	GetGlossaryWords     *sqlx.Stmt `query:"get-glossary-words"`
+	InsertEntry          *sqlx.Stmt `query:"insert-entry"`
+	UpdateEntry          *sqlx.Stmt `query:"update-entry"`
+	InsertRelation       *sqlx.Stmt `query:"insert-relation"`
+	UpdateRelation       *sqlx.Stmt `query:"update-relation"`
+	ReorderRelations     *sqlx.Stmt `query:"reorder-relations"`
+	DeleteEntry          *sqlx.Stmt `query:"delete-entry"`
+	DeleteRelation       *sqlx.Stmt `query:"delete-relation"`
+	GetStats             *sqlx.Stmt `query:"get-stats"`
+	GetEntriesForSitemap *sqlx.Stmt `query:"get-entries-for-sitemap"`
 
 	GetPendingEntries        *sqlx.Stmt `query:"get-pending-entries"`
 	InsertSubmissionEntry    *sqlx.Stmt `query:"insert-submission-entry"`
@@ -69,6 +74,7 @@ type Queries struct {
 	InsertComments           *sqlx.Stmt `query:"insert-comments"`
 	GetComments              *sqlx.Stmt `query:"get-comments"`
 	DeleteComments           *sqlx.Stmt `query:"delete-comments"`
+	DeleteAllPending         *sqlx.Stmt `query:"delete-all-pending"`
 	ApproveSubmission        *sqlx.Stmt `query:"approve-submission"`
 	RejectSubmission         *sqlx.Stmt `query:"reject-submission"`
 }
@@ -77,6 +83,7 @@ type Queries struct {
 type Data struct {
 	queries *Queries
 	Langs   LangMap
+	Dicts   Dicts
 }
 
 // Query represents the parameters of a single search query.
@@ -92,10 +99,11 @@ type Query struct {
 }
 
 // New returns an instance of the search interface.
-func New(q *Queries, langs LangMap) *Data {
+func New(q *Queries, langs LangMap, dicts Dicts) *Data {
 	return &Data{
 		queries: q,
 		Langs:   langs,
+		Dicts:   dicts,
 	}
 }
 
@@ -164,7 +172,7 @@ func (d *Data) Search(q Query) ([]Entry, int, error) {
 	}
 
 	// Replace nulls with [].
-	for i := range out {
+	for i, _ := range out {
 		if out[i].Relations == nil {
 			out[i].Relations = []Entry{}
 		}
@@ -271,6 +279,10 @@ func (d *Data) InsertSubmissionEntry(e Entry) (int, error) {
 
 // UpdateEntry updates a dictionary entry.
 func (d *Data) UpdateEntry(id int, e Entry) error {
+	if e.Status == "" {
+		e.Status = StatusEnabled
+	}
+
 	_, err := d.queries.UpdateEntry.Exec(id,
 		e.Content,
 		e.Initial,
@@ -280,6 +292,7 @@ func (d *Data) UpdateEntry(id int, e Entry) error {
 		e.Tags,
 		e.Phones,
 		e.Notes,
+		e.Meta,
 		e.Status)
 	return err
 }
@@ -320,8 +333,8 @@ func (d *Data) DeleteEntry(id int) error {
 }
 
 // DeleteRelation deletes a dictionary entry by its id.
-func (s *Data) DeleteRelation(fromID, toID int) error {
-	_, err := s.queries.DeleteRelation.Exec(fromID, toID)
+func (s *Data) DeleteRelation(fromID, relID int) error {
+	_, err := s.queries.DeleteRelation.Exec(relID)
 	return err
 }
 
@@ -348,6 +361,12 @@ func (d *Data) DeleteComments(id int) error {
 	return err
 }
 
+// DeleteAllPending deletes a change suggestion from the public.
+func (d *Data) DeleteAllPending() error {
+	_, err := d.queries.DeleteAllPending.Exec()
+	return err
+}
+
 // GetStats returns DB stats.
 func (d *Data) GetStats() (Stats, error) {
 	var (
@@ -358,9 +377,15 @@ func (d *Data) GetStats() (Stats, error) {
 		return out, err
 	}
 
-	err := json.Unmarshal(b, &out)
+	if err := json.Unmarshal(b, &out); err != nil {
+		return out, nil
+	}
 
-	return out, err
+	if out.Languages == nil {
+		out.Languages = map[string]int{}
+	}
+
+	return out, nil
 }
 
 // ApproveSubmission approves a pending submission (entry, relations, related entries).
@@ -401,13 +426,20 @@ func (d *Data) insertEntry(e Entry, stmt *sqlx.Stmt) (int, error) {
 		}
 	}
 
+	if e.Status == "" {
+		e.Status = StatusEnabled
+	}
+
 	var id int
-	err := stmt.Get(&id, e.Content, e.Initial, e.Weight, tokens,
-		tsVectorLang, e.Lang, e.Tags, e.Phones, e.Notes, e.Status)
+	err := stmt.Get(&id, e.Content, e.Initial, e.Weight, tokens, tsVectorLang, e.Lang, e.Tags, e.Phones, e.Notes, e.Meta, e.Status)
 	return id, err
 }
 
 func (d *Data) insertRelation(fromID, toID int, r Relation, stmt *sqlx.Stmt) (int, error) {
+	if r.Status == "" {
+		r.Status = StatusEnabled
+	}
+
 	var id int
 	err := stmt.Get(&id, fromID, toID, r.Types, r.Tags, r.Notes, r.Weight, r.Status)
 	return id, err
@@ -476,5 +508,6 @@ func TokensToTSVector(tokens []Token) []string {
 			out = append(out, fmt.Sprintf("%s:%d", t.Token, t.Weight))
 		}
 	}
+
 	return out
 }

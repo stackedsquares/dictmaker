@@ -15,6 +15,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+const isAuthed = "is_authed"
+
 // handleGetConfig returns the language configuration.
 func handleGetConfig(c echo.Context) error {
 	var (
@@ -26,7 +28,7 @@ func handleGetConfig(c echo.Context) error {
 		Languages data.LangMap `json:"languages"`
 		Version   string       `json:"version"`
 		BuildStr  string       `json:"build"`
-	}{app.constants.RootURL, app.data.Langs, versionString, buildString}
+	}{app.consts.RootURL, app.data.Langs, versionString, buildString}
 
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -59,6 +61,10 @@ func handleInsertEntry(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
+	if len(e.Meta) == 0 {
+		e.Meta = map[string]interface{}{}
+	}
+
 	id, err := app.data.InsertEntry(e)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
@@ -89,7 +95,7 @@ func handleGetPendingEntries(c echo.Context) error {
 			return c.JSON(http.StatusOK, okResp{out})
 		}
 
-		app.logger.Printf("error querying db: %v", err)
+		app.lo.Printf("error querying db: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -99,7 +105,7 @@ func handleGetPendingEntries(c echo.Context) error {
 
 	// Load relations into the matches.
 	if err := app.data.SearchAndLoadRelations(res, data.Query{}); err != nil {
-		app.logger.Printf("error querying db for defs: %v", err)
+		app.lo.Printf("error querying db for defs: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
@@ -134,7 +140,7 @@ func handleGetEntry(c echo.Context) error {
 
 	entries := []data.Entry{e}
 	if err := app.data.SearchAndLoadRelations(entries, data.Query{}); err != nil {
-		app.logger.Printf("error loading relations: %v", err)
+		app.lo.Printf("error loading relations: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "error loading relations")
 	}
 
@@ -151,6 +157,10 @@ func handleGetParentEntries(c echo.Context) error {
 	out, err := app.data.GetParentEntries(id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if out == nil {
+		out = []data.Entry{}
 	}
 
 	return c.JSON(http.StatusOK, okResp{out})
@@ -294,13 +304,16 @@ func handleReorderRelations(c echo.Context) error {
 		app = c.Get("app").(*App)
 	)
 
-	var ids []int
-	if err := json.NewDecoder(c.Request().Body).Decode(&ids); err != nil {
+	req := struct {
+		IDs []int `json:"ids"`
+	}{}
+
+	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("error parsing request: %v", err))
 	}
 
-	if err := app.data.ReorderRelations(ids); err != nil {
+	if err := app.data.ReorderRelations(req.IDs); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			fmt.Sprintf("error updating relation: %v", err))
 	}
@@ -313,14 +326,14 @@ func handleDeleteRelation(c echo.Context) error {
 	var (
 		app       = c.Get("app").(*App)
 		fromID, _ = strconv.Atoi(c.Param("fromID"))
-		toID, _   = strconv.Atoi(c.Param("toID"))
+		relID, _  = strconv.Atoi(c.Param("relID"))
 	)
 
-	if fromID < 1 || toID < 1 {
+	if fromID < 1 || relID < 1 {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid IDs.")
 	}
 
-	if err := app.data.DeleteRelation(fromID, toID); err != nil {
+	if err := app.data.DeleteRelation(fromID, relID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			fmt.Sprintf("error deleting relation: %v", err))
 	}
@@ -339,6 +352,10 @@ func handleGetComments(c echo.Context) error {
 			fmt.Sprintf("error deleting relation: %v", err))
 	}
 
+	if out == nil {
+		return c.JSON(http.StatusOK, okResp{[]interface{}{}})
+	}
+
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
@@ -355,6 +372,19 @@ func handleDeletecomments(c echo.Context) error {
 	if err := app.data.DeleteComments(id); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			fmt.Sprintf("error deleting comments: %v", err))
+	}
+
+	return c.JSON(http.StatusOK, okResp{true})
+}
+
+func handleDeletePending(c echo.Context) error {
+	var (
+		app = c.Get("app").(*App)
+	)
+
+	if err := app.data.DeleteAllPending(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError,
+			fmt.Sprintf("error deleting pending entries: %v", err))
 	}
 
 	return c.JSON(http.StatusOK, okResp{true})
@@ -402,8 +432,10 @@ func adminPage(tpl string) func(c echo.Context) error {
 
 		b := &bytes.Buffer{}
 		err := app.adminTpl.ExecuteTemplate(b, tpl, struct {
-			Title string
-		}{title})
+			Title    string
+			AssetVer string
+			Consts   Consts
+		}{title, assetVer, app.consts})
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError,
 				fmt.Sprintf("error compiling template: %v", err))
@@ -417,15 +449,11 @@ func adminPage(tpl string) func(c echo.Context) error {
 func basicAuth(username, password string, c echo.Context) (bool, error) {
 	app := c.Get("app").(*App)
 
-	// Auth is disabled.
-	if len(app.constants.AdminUsername) == 0 &&
-		len(app.constants.AdminPassword) == 0 {
+	if subtle.ConstantTimeCompare([]byte(username), app.consts.AdminUsername) == 1 &&
+		subtle.ConstantTimeCompare([]byte(password), app.consts.AdminPassword) == 1 {
+		c.Set(isAuthed, true)
 		return true, nil
 	}
 
-	if subtle.ConstantTimeCompare([]byte(username), app.constants.AdminUsername) == 1 &&
-		subtle.ConstantTimeCompare([]byte(password), app.constants.AdminPassword) == 1 {
-		return true, nil
-	}
 	return false, nil
 }

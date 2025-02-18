@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/knadh/koanf/v2"
+	"github.com/knadh/stuffbin"
 )
 
-func installSchema(app *App, prompt bool) {
+func installSchema(ver string, prompt bool, fs stuffbin.FileSystem, db *sqlx.DB, ko *koanf.Koanf) {
 	if prompt {
 		fmt.Println("")
 		fmt.Println("** first time installation **")
@@ -28,16 +32,30 @@ func installSchema(app *App, prompt bool) {
 		}
 	}
 
-	q, err := app.fs.Read("/schema.sql")
+	q, err := fs.Read("/schema.sql")
 	if err != nil {
-		app.logger.Fatal(err.Error())
+		lo.Fatal(err.Error())
 		return
 	}
 
-	if _, err := app.db.Exec(string(q)); err != nil {
-		app.logger.Fatal(err.Error())
+	if _, err := db.Exec(string(q)); err != nil {
+		lo.Fatal(err.Error())
 		return
 	}
 
-	app.logger.Println("successfully installed schema")
+	// Insert the current migration version.
+	if err := recordMigrationVersion(ver, db); err != nil {
+		lo.Fatal(err)
+	}
+
+	lo.Println("successfully installed schema")
+}
+
+// recordMigrationVersion inserts the given version (of DB migration) into the
+// `migrations` array in the settings table.
+func recordMigrationVersion(ver string, db *sqlx.DB) error {
+	_, err := db.Exec(fmt.Sprintf(`INSERT INTO settings (key, value)
+	VALUES('migrations', '["%s"]'::JSONB)
+	ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value`, ver))
+	return err
 }

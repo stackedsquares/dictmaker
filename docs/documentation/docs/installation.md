@@ -5,8 +5,10 @@ dictpress requires Postgres ⩾ v10.
 ## Binary
 - Download the [latest release](https://github.com/knadh/dictpress/releases) and extract the binary.
 - `./dictpress --new-config` to generate config.toml. Then, edit the file.
-- `./dictpress --install` to setup the Postgres DB.
+- `./dictpress --install` to install the tables in the Postgres DB.
 - Run `./dictpress` and visit `http://localhost:9000/admin`.
+
+See [Importing data](import.md) to populate the dictionary database from CSVs.
 
 
 ## Compiling from source
