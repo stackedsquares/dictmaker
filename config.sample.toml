@@ -10,6 +10,10 @@ admin_password = "dictpress_admin_password"
 # Example: yourdictionary.site.com
 root_url = "http://localhost:9000"
 
+# (Optional) URLs to one or more JS/CSS files (ending in .js or .css) to load on the admin UI.
+# This may be useful to integrate multi-lingual typing capabilities in admin UI boxes when dealing with different languages.
+admin_assets = []
+
 # Enable rendering arbitrary pages from (site_dir/pages/*.html).
 # For instance, "about" for site_dir/pages/about.html will be
 # rendered on site.com/pages/about where the template is defined
@@ -23,6 +27,9 @@ enable_pages = true
 # All user submissions are queued for the admin to review and only get published
 # on approval.
 enable_submissions = false
+
+# Available dictionary pairs. [$FromLangName, $ToLangName] pairs from the languages defined below in [lang.*] keys.
+dicts = [["english", "italian"], ["italian", "english"]]
 
 
 [results]
@@ -40,6 +47,7 @@ num_page_nums = 10
 
 
 [glossary]
+enabled = true
 default_per_page = 100
 max_per_page = 100
 num_page_nums = 10
@@ -48,9 +56,19 @@ num_page_nums = 10
 [db]
 host = "localhost"
 port = 5432
-db = "mydict"
-user = ""
-password = ""
+db = "dbname"
+user = "username"
+password = "password"
+
+# Tokenizer specific config. IndicPhone generates a phone based index for Indian languages.
+# Every input word generates 3 keys, key0 being the broadest phonetic match and key2 being the closest.
+# The broadest key when used as a search token generally returns a lot of false positives.
+# The number of keys to include, 1-3, can be configured here. The inclusion is in the order key2, key1, key0.
+[tokenizer.indicphone.kn]
+num_keys = 2
+
+[tokenizer.indicphone.ml]
+num_keys = 2
 
 
 [lang.english]
@@ -71,7 +89,7 @@ adv = "Adverb"
 conj = "Conjugation"
 
 [lang.italian]
-tokenzier = "italian"
+tokenizer = "italian"
 tokenizer_type = "postgres"
 
 [lang.italian.types]

@@ -97,9 +97,8 @@ func handleNewSubmission(c echo.Context) error {
 	// Save the main entry.
 	fromID, err := app.data.InsertSubmissionEntry(e)
 	if err != nil {
-		app.logger.Printf("error inserting submission entry: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError,
-			fmt.Sprintf("Error saving entry.", err))
+		app.lo.Printf("error inserting submission entry: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Error saving entry.")
 	}
 
 	// Insert relations.
@@ -121,9 +120,9 @@ func handleNewSubmission(c echo.Context) error {
 			Status:  data.StatusPending,
 		})
 		if err != nil {
-			app.logger.Printf("error inserting submission definition: %v", err)
+			app.lo.Printf("error inserting submission definition: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError,
-				fmt.Sprintf("Error saving definition.", err))
+				fmt.Sprintf("Error saving definition: %v", err))
 		}
 
 		rel := data.Relation{
@@ -132,9 +131,9 @@ func handleNewSubmission(c echo.Context) error {
 			Status: data.StatusPending,
 		}
 		if _, err := app.data.InsertSubmissionRelation(fromID, toID, rel); err != nil {
-			app.logger.Printf("error inserting submission relation: %v", err)
+			app.lo.Printf("error inserting submission relation: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError,
-				fmt.Sprintf("Error saving relation.", err))
+				fmt.Sprintf("Error saving relation.%v", err))
 		}
 	}
 
@@ -162,9 +161,9 @@ func handleNewComments(c echo.Context) error {
 	}
 
 	if err := app.data.InsertComments(s.FromGUID, s.ToGUID, s.Comments); err != nil {
-		app.logger.Printf("error inserting change submission: %v", err)
+		app.lo.Printf("error inserting change submission: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			fmt.Sprintf("Error saving submission.", err))
+			fmt.Sprintf("Error saving submission: %v", err))
 	}
 
 	return c.JSON(http.StatusOK, okResp{true})

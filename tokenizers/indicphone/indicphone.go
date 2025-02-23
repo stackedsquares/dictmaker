@@ -3,6 +3,7 @@ package indicphone
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/knadh/dictpress/internal/data"
@@ -10,18 +11,25 @@ import (
 	"gitlab.com/joice/mlphone-go"
 )
 
+type Config struct {
+	NumMLKeys int
+	NumKNKeys int
+}
+
 // IndicPhone is a phonetic tokenizer that generates phonetic tokens for
 // Indian languages. It is similar to Metaphone for English.
 type IndicPhone struct {
-	kn *knphone.KNphone
-	ml *mlphone.MLPhone
+	config Config
+	kn     *knphone.KNphone
+	ml     *mlphone.MLPhone
 }
 
 // New returns a new instance of the Kannada tokenizer.
-func New() *IndicPhone {
+func New(config Config) *IndicPhone {
 	return &IndicPhone{
-		kn: knphone.New(),
-		ml: mlphone.New(),
+		config: config,
+		kn:     knphone.New(),
+		ml:     mlphone.New(),
 	}
 }
 
@@ -47,7 +55,7 @@ func (ip *IndicPhone) ToTokens(s string, lang string) ([]string, error) {
 		}
 
 		if key0 == "" {
-			return nil, nil
+			continue
 		}
 
 		tokens = append(tokens,
@@ -62,22 +70,35 @@ func (ip *IndicPhone) ToTokens(s string, lang string) ([]string, error) {
 // ToQuery tokenizes a Kannada string into Romanized (knphone) Postgres
 // tsquery string.
 func (ip *IndicPhone) ToQuery(s string, lang string) (string, error) {
-	var key0, key1, key2 string
+	var (
+		key0, key1, key2 string
+		numKeys          = 0
+	)
 
 	switch lang {
 	case "kannada":
 		key0, key1, key2 = ip.kn.Encode(s)
+		numKeys = ip.config.NumKNKeys
 	case "malayalam":
-		key0, key1, key2 = ip.kn.Encode(s)
+		key0, key1, key2 = ip.ml.Encode(s)
+		numKeys = ip.config.NumMLKeys
 	}
 
 	if key0 == "" {
 		return "", nil
 	}
-
-	if key0 != key1 {
-		return fmt.Sprintf("%s | (%s & %s) ", key2, key1, key0), nil
+	if numKeys == 0 {
+		numKeys = 1
 	}
 
-	return fmt.Sprintf("%s", key0), nil
+	fmt.Println(numKeys)
+
+	// De-duplicate tokens.
+	tokens := slices.Compact([]string{key2, key1, key0})
+
+	if len(tokens) == 0 {
+		return "", nil
+	}
+
+	return strings.Join(tokens[:min(len(tokens), numKeys)], " | "), nil
 }

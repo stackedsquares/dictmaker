@@ -1,40 +1,69 @@
-// Search form.
-(function() {
-  var form = document.querySelector(".search-form");
-  if (!form) {
-    return false;
-  }
+(() => {
+  const elTabs = document.querySelectorAll(`.tabs input`);
+  const elForm = document.querySelector("form.search-form");
+  const elQ = document.querySelector("#q");
+  const defaultLang = document.querySelector(`.tabs input:first-child`).value;
 
+  function selectDict(dict) {
+    // dict is in the format '$fromLang/$toLang'.
+    const langs = dict.split("/");
+    const t = document.querySelector(`.tabs #tab-${langs[0]}-${langs[1]}`);
+    if (!t) {
+      return;
+    }
+
+    Object.assign(localStorage, { dict, from_lang: langs[0], to_lang: langs[1] });
+
+    t.checked = true;
+    elForm.setAttribute("action", `${_ROOT_URL}/dictionary/${dict}`);
+
+    elQ.focus();
+    elQ.select();
+  }
 
   // Capture the form submit and send it as a canonical URL instead
   // of the ?q query param. 
-  var isOn = false;
-  function search() {
-    // The autocomplete suggestion click doesn't fire a submit, but Enter
-    // fires a submit. So to avoid double submits in autcomplete.onSelect(),
-    // add a debounce.
-    if (isOn) {
-      return false;
-    }
-    isOn = true;
-    window.setTimeout(function() {
-      isOn = false;
-    }, 50);
+  function search(q) {
+    let val = q.trim();
 
-    var f = form.querySelector("input[name='q']");
-    if (!f) {
-      return false;
-    }
-    var q = encodeURIComponent(f.value.replace(/\s+/g, " ").trim()).replace(/%20/g, "+");
-    document.location.href = form.getAttribute("action") + "/" + q;
-    return false;
+    const uri = elForm.getAttribute("action");
+    document.location.href = `${uri}/${encodeURIComponent(val).replace(/%20/g, "+")}`;
   }
 
-  // Bind to form submit.
-  form.addEventListener("submit", function(e) {
+  // On ~ press, focus search input.
+  document.onkeydown = (function (e) {
+    if (e.keyCode != 192) {
+      return;
+    }
+
     e.preventDefault();
-    search();
+    q.focus();
+    q.select();
   });
+
+  // On language tab selector click.
+  elTabs.forEach((el) => {
+    el.onchange = (e) => {
+      e.preventDefault();
+      selectDict(e.target.value);
+    }
+  });
+
+  // Bind to form submit.
+  elForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    search(elQ.value);
+  });
+
+
+  // Select a language based on the page URL.
+  let dict = localStorage.dict || defaultLang;
+  const uri = /(dictionary)\/((.+?)\/(.+?))\//i.exec(document.location.href);
+  if (uri && uri.length == 5) {
+    dict = uri[2];
+  }
+
+  selectDict(dict);
 })();
 
 
@@ -85,10 +114,10 @@
       const btn = e.target;
 
       // Form is already open.
-      if (btn.dataset.open) {
+      if (btn.close) {
+        btn.close();
         return;
       }
-      btn.dataset.open = true;
 
       const form = document.querySelector(".form-comments").cloneNode(true);
       o.parentNode.appendChild(form);
@@ -97,19 +126,19 @@
       const txt = form.querySelector("textarea");
       txt.focus();
       txt.onkeydown = (e) => {
-        if (e.key === "Escape") {
-          close();
+        if (e.key === "Escape" && txt.value === "") {
+          btn.close();
         }
       };
 
-      const close = () => {
-        btn.dataset.open = "";
+      btn.close = () => {
+        btn.close = null;
         form.remove();
       };
 
       // Handle form submission.
       form.onsubmit = () => {
-        fetch("/api/submissions/comments", {
+        fetch(`${window._ROOT_URL}/api/submissions/comments`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -123,11 +152,11 @@
           alert(`Error submitting: ${err}`);
         });
 
-        close();
-        alert("Submitted for review");
+        alert(form.dataset.success);
+        btn.close();
       };
 
-      form.querySelector("button.close").onclick = close;
+      form.querySelector("button.close").onclick = btn.close;
     });
   })
 })();

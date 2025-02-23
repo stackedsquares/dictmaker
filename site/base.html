@@ -3,45 +3,61 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>
-    {{- if eq .Data.PageName "/" }}Welcome to the dictionary.
-    {{- else if eq .Data.PageName "glossary" }}Glossary of words
-    {{- else if eq .Data.PageName "search" }}"{{ .Data.Query.Query }}" meaning
-    {{- else if ne .Data.Title "" }}{{ .Data.Title }}
-    {{- else }}{{ block "title" . }}{{end}}
-    {{- end -}}
-  </title>
-  <meta name="description" value="
-    {{- if eq .Data.PageName "/" }}Dictionary website
-    {{- else if eq .Data.PageName "glossary" }}Glossary of words.
-    {{- else if eq .Data.PageName "search" }}{{ .Data.Query.Query }} meaning.
-    {{- else if ne .Data.Description "" }}{{ .Data.Description }}
-    {{- else }}{{ block "description" . }}{{end}}
-    {{- end -}}" />
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+  {{- block "meta" . -}}
+    <title>
+      {{- if eq .Data.PageType "/" }} {{- .L.T "global.siteName" -}}
+      {{- else if eq .Data.PageType "glossary" }}{{- .L.T "public.glossaryTitle" -}}
+      {{- else if eq .Data.PageType "search" }}{{- .L.Ts "public.searchTitle" "query" .Data.Query.Query -}}
+      {{- else if ne .Data.Title "" }}{{ .Data.Title }}
+      {{- end -}}
+    </title>
+    <meta name="description" value="
+      {{- if eq .Data.PageType "/" }}Dictionary website
+      {{- else if eq .Data.PageType "glossary" }}Glossary of words.
+      {{- else if eq .Data.PageType "search" }}{{ .Data.Query.Query }} meaning.
+      {{- else if ne .Data.Description "" }}{{ .Data.Description }}
+      {{- else }}{{ block "description" . }}{{end}}
+      {{- end -}}" />
+  {{- end -}}
+
   <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-	
-	<link rel="shortcut icon" href="static/favicon.png" type="image/x-icon" />
-  <link href="/static/flexit.css" rel="stylesheet" type="text/css" />
-  <link href="/static/style.css" rel="stylesheet" type="text/css" />
+	<script>window._ROOT_URL = "{{ .Consts.RootURL }}";</script>
+	<link rel="shortcut icon" href="{{ .Consts.RootURL }}/static/favicon.png?v={{ .AssetVer }}" type="image/x-icon" />
+  <link href="{{ .Consts.RootURL }}/static/flexit.css?v={{ .AssetVer }}" rel="stylesheet" type="text/css" />
+  <link href="{{ .Consts.RootURL }}/static/style.css?v={{ .AssetVer }}" rel="stylesheet" type="text/css" />
 </head>
-<body class="{{ if eq .Data.PageName "/"}}home{{ end }}">
-  <div class="container wrap box">
+<body class="{{ if eq .Data.PageType "/"}}home{{ end }}">
+<div class="container">
+  <section class="main">
     <header class="header">
       <div class="row">
         <div class="logo four columns">
-          <a href="/"><img src="/static/logo.svg" alt="Dictionary logo" /></a>
-          <div class="intro">
-            <p>Welcome to the dictionary website</p>
-          </div>
+          <a href="{{ .Consts.RootURL }}"><img src="{{ .Consts.RootURL }}/static/logo.svg?v={{ .AssetVer }}" alt="Dictionary logo" /></a>
+          <h3 class="intro">
+            {{- .L.T "public.subTitle" -}}
+          </h3>
         </div><!-- logo col -->
 
         <div class="search eight columns">
-          <form class="search-form" method="get" action="/dictionary/english/italian">
+          <div class="tabs">
+            {{ range $d := .Dicts }}
+              {{ $from := index $d 0}}
+              {{ $to := index $d 1}}
+                <div class="group">
+                  <input type="radio" name="dict" value="{{ $from.ID }}/{{ $to.ID }}" id="tab-{{ $from.ID }}-{{ $to.ID }}" aria-label="{{ $from.Name }} - {{ $to.Name }}" />
+                  <label class="tab" for="tab-{{ $from.ID }}-{{ $to.ID }}">
+                    {{ $from.Name }} - {{ $to.Name }}
+                  </label>
+                </div>
+            {{ end }}
+          </div>
+          <form class="search-form" method="get" action="">
             <div>
-              <input autofocus autocomplete="off" required placeholder=""
+              <input autofocus autocomplete="off" required placeholder="" aria-label="Search keyword"
                 type="text" id="q" name="q" value="{{ if .Data.Query }}{{ .Data.Query.Query }}{{ end }}" />
-              <button type="submit"><img src="/static/search.svg" alt="Search" /></button>
+              <button type="submit"><img src="{{ .Consts.RootURL }}/static/search.svg?v={{ .AssetVer }}" alt="{{- .L.T "global.btnSearch" -}}" /></button>
             </div>
           </form>
         </div>
@@ -51,28 +67,38 @@
 
 {{ define "footer" }}
     <nav class="nav">
-      <a href="/glossary/english/italian/a">Glossary</a>
-      {{ if .EnableSubmissions }}
-        <a href="/submit">Submit new</a>
+      {{ if .Consts.EnableSubmissions }}
+        <a href="{{ $.Consts.RootURL }}/submit">{{- .L.T "public.submitEntry" -}}</a>
       {{ end }}
-      <a href="/pages/about">About</a>
+      {{ if .Consts.EnableGlossary }}
+          {{ range $d := .Dicts }}
+            {{ $from := index $d 0}}
+            {{ $to := index $d 1}}
+            <a href="{{ $.Consts.RootURL }}/glossary/{{ $from.ID }}/{{ $to.ID }}/*" class="tab">
+              {{ $.L.Ts "public.glossary" "lang" $from.Name }}
+            </a>
+          {{ end }}
+      {{ end }}
     </nav>
-  </div>
+  </section>
+
   <footer class="footer">
     <a href="https://dict.press">Powered by dictpress</a>
   </footer>
-  <script src="/static/main.js"></script>
+</div><!-- container -->
 
-  <form class="box form-comments">
+  <form class="box form-comments" data-success="{{ .L.T "public.suggestSubmitted" }}">
   <div>
-    <h3>Comments and suggestions</h3>
+    <h4>{{ .L.T "public.submitTitle" }}</h4>
     <textarea name="comments" autofocus maxlength="500"></textarea>
     <p>
-      <button type="submit">Submit for review</button>
-      <button type="submit" class="button-outline close">Close</button>
+      <button type="submit">{{ .L.T "public.suggestSubmitBtn" }}</button>
+      <button class="button-outline close">{{ .L.T "global.btnClose" }}</button>
     </p>
   </div>
   </form>
+
+  <script src="{{ .Consts.RootURL }}/static/main.js?v={{ .AssetVer }}"></script>
 </body>
 
 </html>
